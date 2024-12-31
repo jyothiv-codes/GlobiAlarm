@@ -15,6 +15,7 @@ import android.widget.ArrayAdapter;
 import android.widget.AutoCompleteTextView;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.ImageButton;
 import android.widget.Toast;
 import com.google.android.material.card.MaterialCardView;
 import com.google.android.material.checkbox.MaterialCheckBox;
@@ -48,7 +49,11 @@ public class AlarmSetterActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_alarm_setter);
-
+// Enable the Up button (back arrow) in the action bar
+        if (getSupportActionBar() != null) {
+            getSupportActionBar().setDisplayHomeAsUpEnabled(true);
+            getSupportActionBar().setDisplayShowHomeEnabled(true);
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             AlarmManager alarmManager = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
             if (!alarmManager.canScheduleExactAlarms()) {
@@ -184,7 +189,10 @@ public class AlarmSetterActivity extends AppCompatActivity {
         dateButton.setOnClickListener(v -> showDatePicker());
         timeButton.setOnClickListener(v -> showTimePicker());
         saveButton.setOnClickListener(v -> saveAlarm());
+        ImageButton backButton = findViewById(R.id.backButton);
+        backButton.setOnClickListener(v -> onBackPressed());
     }
+
 
     private void loadExistingAlarmData() {
         String name = getIntent().getStringExtra("ALARM_NAME");
@@ -362,5 +370,10 @@ public class AlarmSetterActivity extends AppCompatActivity {
                     pendingIntent
             );
         }
+    }
+    @Override
+    public boolean onSupportNavigateUp() {
+        onBackPressed();
+        return true;
     }
 }
