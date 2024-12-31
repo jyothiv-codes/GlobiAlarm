@@ -10,12 +10,18 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.Bundle;
+import android.view.View;
 import android.widget.ArrayAdapter;
 import android.widget.AutoCompleteTextView;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.Toast;
-
+import com.google.android.material.card.MaterialCardView;
+import com.google.android.material.checkbox.MaterialCheckBox;
+import android.widget.Filter;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import androidx.appcompat.app.AppCompatActivity;
 
 import java.util.Calendar;
@@ -27,6 +33,8 @@ public class AlarmSetterActivity extends AppCompatActivity {
     private Button dateButton, timeButton, saveButton;
     private AutoCompleteTextView timezoneAutoComplete;
     private AutoCompleteTextView recurrenceAutoComplete;
+    private MaterialCardView weekDaysContainer;
+    private MaterialCheckBox[] dayCheckboxes;
     private SharedPreferences preferences;
     private Calendar selectedDateTime;
     private String selectedTimezone;
@@ -66,6 +74,7 @@ public class AlarmSetterActivity extends AppCompatActivity {
         initializeViews();
         setupTimeZoneSpinner();
         setupRecurrenceDropdown();
+        setupWeekDayCheckboxes();
         setupClickListeners();
 
         if (isEditMode) {
@@ -80,6 +89,17 @@ public class AlarmSetterActivity extends AppCompatActivity {
         saveButton = findViewById(R.id.saveButton);
         timezoneAutoComplete = findViewById(R.id.timezoneAutoComplete);
         recurrenceAutoComplete = findViewById(R.id.recurrenceAutoComplete);
+        weekDaysContainer = findViewById(R.id.weekDaysContainer);
+
+        dayCheckboxes = new MaterialCheckBox[]{
+                findViewById(R.id.sunday),
+                findViewById(R.id.monday),
+                findViewById(R.id.tuesday),
+                findViewById(R.id.wednesday),
+                findViewById(R.id.thursday),
+                findViewById(R.id.friday),
+                findViewById(R.id.saturday)
+        };
 
         if (isEditMode) {
             saveButton.setText("Update Alarm");
@@ -88,12 +108,53 @@ public class AlarmSetterActivity extends AppCompatActivity {
 
     private void setupTimeZoneSpinner() {
         String[] timeZones = TimeZone.getAvailableIDs();
-        ArrayAdapter<String> adapter = new ArrayAdapter<>(this,
-                R.layout.dropdown_item, timeZones);
+        List<String> timeZoneList = new ArrayList<>(Arrays.asList(timeZones));
+
+        ArrayAdapter<String> adapter = new ArrayAdapter<String>(this, R.layout.dropdown_item, timeZoneList) {
+            @Override
+            public Filter getFilter() {
+                return new Filter() {
+                    @Override
+                    protected FilterResults performFiltering(CharSequence constraint) {
+                        FilterResults results = new FilterResults();
+
+                        if (constraint == null || constraint.length() == 0) {
+                            ArrayList<String> list = new ArrayList<>(Arrays.asList(timeZones));
+                            results.values = list;
+                            results.count = list.size();
+                        } else {
+                            ArrayList<String> filteredList = new ArrayList<>();
+                            String filterPattern = constraint.toString().toLowerCase().trim();
+
+                            for (String timezone : timeZones) {
+                                if (timezone.toLowerCase().contains(filterPattern)) {
+                                    filteredList.add(timezone);
+                                }
+                            }
+
+                            results.values = filteredList;
+                            results.count = filteredList.size();
+                        }
+
+                        return results;
+                    }
+
+                    @SuppressWarnings("unchecked")
+                    @Override
+                    protected void publishResults(CharSequence constraint, FilterResults results) {
+                        clear();
+                        if (results.values != null) {
+                            addAll((ArrayList<String>) results.values);
+                        }
+                        notifyDataSetChanged();
+                    }
+                };
+            }
+        };
+
         timezoneAutoComplete.setAdapter(adapter);
         timezoneAutoComplete.setThreshold(1);
     }
-
     private void setupRecurrenceDropdown() {
         ArrayAdapter<String> adapter = new ArrayAdapter<>(
                 this,
@@ -101,7 +162,22 @@ public class AlarmSetterActivity extends AppCompatActivity {
                 RECURRENCE_OPTIONS
         );
         recurrenceAutoComplete.setAdapter(adapter);
-        recurrenceAutoComplete.setText(RECURRENCE_OPTIONS[0], false); // Default to One-time
+        recurrenceAutoComplete.setText(RECURRENCE_OPTIONS[0], false);
+
+        recurrenceAutoComplete.setOnItemClickListener((parent, view, position, id) -> {
+            String selected = parent.getItemAtPosition(position).toString();
+            weekDaysContainer.setVisibility(
+                    selected.equals("Weekly") ? View.VISIBLE : View.GONE
+            );
+        });
+    }
+
+    private void setupWeekDayCheckboxes() {
+        // Initialize with current day checked if it's a new alarm
+        if (!isEditMode) {
+            int currentDay = Calendar.getInstance().get(Calendar.DAY_OF_WEEK) - 1;
+            dayCheckboxes[currentDay].setChecked(true);
+        }
     }
 
     private void setupClickListeners() {
@@ -134,6 +210,13 @@ public class AlarmSetterActivity extends AppCompatActivity {
 
         if (recurrence != null) {
             recurrenceAutoComplete.setText(recurrence, false);
+            if (recurrence.equals("Weekly")) {
+                weekDaysContainer.setVisibility(View.VISIBLE);
+                String weekdays = preferences.getString(editAlarmId + "_weekdays", "0000000");
+                for (int i = 0; i < 7; i++) {
+                    dayCheckboxes[i].setChecked(weekdays.charAt(i) == '1');
+                }
+            }
         }
     }
 
@@ -177,6 +260,20 @@ public class AlarmSetterActivity extends AppCompatActivity {
             return;
         }
 
+        if (recurrence.equals("Weekly")) {
+            boolean anyDaySelected = false;
+            for (MaterialCheckBox checkbox : dayCheckboxes) {
+                if (checkbox.isChecked()) {
+                    anyDaySelected = true;
+                    break;
+                }
+            }
+            if (!anyDaySelected) {
+                Toast.makeText(this, "Please select at least one day", Toast.LENGTH_SHORT).show();
+                return;
+            }
+        }
+
         AlarmManager alarmManager = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
             Toast.makeText(this, "Please allow exact alarms permission", Toast.LENGTH_LONG).show();
@@ -206,6 +303,15 @@ public class AlarmSetterActivity extends AppCompatActivity {
         editor.putLong(alarmId + "_time", selectedDateTime.getTimeInMillis());
         editor.putString(alarmId + "_timezone", selectedTimezone);
         editor.putString(alarmId + "_recurrence", recurrence);
+
+        if (recurrence.equals("Weekly")) {
+            StringBuilder daysString = new StringBuilder();
+            for (MaterialCheckBox checkbox : dayCheckboxes) {
+                daysString.append(checkbox.isChecked() ? "1" : "0");
+            }
+            editor.putString(alarmId + "_weekdays", daysString.toString());
+        }
+
         editor.apply();
 
         // Schedule alarm
@@ -223,6 +329,24 @@ public class AlarmSetterActivity extends AppCompatActivity {
         AlarmManager alarmManager = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
         Intent intent = new Intent(this, AlarmReceiver.class);
         intent.putExtra("ALARM_ID", alarmId);
+
+        if (recurrence.equals("Weekly")) {
+            String weekdays = preferences.getString(alarmId + "_weekdays", "0000000");
+            Calendar nextAlarm = Calendar.getInstance();
+            nextAlarm.setTimeInMillis(triggerTime);
+
+            // Find next occurrence
+            for (int i = 0; i < 7; i++) {
+                int dayOfWeek = (nextAlarm.get(Calendar.DAY_OF_WEEK) - 1 + i) % 7;
+                if (weekdays.charAt(dayOfWeek) == '1') {
+                    if (i > 0) {
+                        nextAlarm.add(Calendar.DAY_OF_YEAR, i);
+                    }
+                    triggerTime = nextAlarm.getTimeInMillis();
+                    break;
+                }
+            }
+        }
 
         PendingIntent pendingIntent = PendingIntent.getBroadcast(
                 this,
