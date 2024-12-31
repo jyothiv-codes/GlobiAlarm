@@ -59,28 +59,42 @@ public class MainActivity extends AppCompatActivity {
         // Click listener for editing alarms
         alarmList.setOnItemClickListener((parent, view, position, id) -> {
             Map<String, ?> allPrefs = preferences.getAll();
-            List<String> alarmIds = new ArrayList<>();
+            List<AlarmData> sortedAlarms = new ArrayList<>();
+            List<String> sortedAlarmIds = new ArrayList<>();
 
+            // Collect all alarms with their IDs
             for (String key : allPrefs.keySet()) {
                 if (key.endsWith("_name")) {
-                    alarmIds.add(key.replace("_name", ""));
+                    String alarmId = key.replace("_name", "");
+                    String name = preferences.getString(key, "");
+                    long time = preferences.getLong(alarmId + "_time", 0);
+                    String timezone = preferences.getString(alarmId + "_timezone", "");
+                    String recurrence = preferences.getString(alarmId + "_recurrence", "One-time");
+
+                    sortedAlarms.add(new AlarmData(name, time, timezone, recurrence));
+                    sortedAlarmIds.add(alarmId);
                 }
             }
 
-            if (position < alarmIds.size()) {
-                String alarmId = alarmIds.get(position);
-                String name = preferences.getString(alarmId + "_name", "");
-                long time = preferences.getLong(alarmId + "_time", 0);
-                String timezone = preferences.getString(alarmId + "_timezone", "");
-                String recurrence = preferences.getString(alarmId + "_recurrence", "One-time");
+            // Sort both lists using the same comparator as in loadAlarms()
+            Collections.sort(sortedAlarms, (a1, a2) -> Long.compare(
+                    convertToUTC(a1.time, a1.timezone),
+                    convertToUTC(a2.time, a2.timezone)
+            ));
+
+            if (position < sortedAlarms.size()) {
+                AlarmData selectedAlarm = sortedAlarms.get(position);
+                String selectedAlarmId = sortedAlarmIds.get(
+                        sortedAlarms.indexOf(selectedAlarm)
+                );
 
                 Intent editIntent = new Intent(this, AlarmSetterActivity.class);
                 editIntent.putExtra("EDIT_MODE", true);
-                editIntent.putExtra("ALARM_ID", alarmId);
-                editIntent.putExtra("ALARM_NAME", name);
-                editIntent.putExtra("ALARM_TIME", time);
-                editIntent.putExtra("ALARM_TIMEZONE", timezone);
-                editIntent.putExtra("ALARM_RECURRENCE", recurrence);
+                editIntent.putExtra("ALARM_ID", selectedAlarmId);
+                editIntent.putExtra("ALARM_NAME", selectedAlarm.name);
+                editIntent.putExtra("ALARM_TIME", selectedAlarm.time);
+                editIntent.putExtra("ALARM_TIMEZONE", selectedAlarm.timezone);
+                editIntent.putExtra("ALARM_RECURRENCE", selectedAlarm.recurrence);
                 startActivity(editIntent);
             }
         });
@@ -102,35 +116,66 @@ public class MainActivity extends AppCompatActivity {
 
     private void cancelScheduledAlarm(int position) {
         Map<String, ?> allPrefs = preferences.getAll();
-        List<String> alarmIds = new ArrayList<>();
+        List<AlarmData> sortedAlarms = new ArrayList<>();
+        List<String> sortedAlarmIds = new ArrayList<>();
 
         for (String key : allPrefs.keySet()) {
             if (key.endsWith("_name")) {
-                alarmIds.add(key.replace("_name", ""));
+                String alarmId = key.replace("_name", "");
+                String name = preferences.getString(key, "");
+                long time = preferences.getLong(alarmId + "_time", 0);
+                String timezone = preferences.getString(alarmId + "_timezone", "");
+                String recurrence = preferences.getString(alarmId + "_recurrence", "One-time");
+
+                sortedAlarms.add(new AlarmData(name, time, timezone, recurrence));
+                sortedAlarmIds.add(alarmId);
             }
         }
 
-        if (position < alarmIds.size()) {
-            String alarmId = alarmIds.get(position);
+        Collections.sort(sortedAlarms, (a1, a2) -> Long.compare(
+                convertToUTC(a1.time, a1.timezone),
+                convertToUTC(a2.time, a2.timezone)
+        ));
+
+        if (position < sortedAlarms.size()) {
+            String alarmId = sortedAlarmIds.get(sortedAlarms.indexOf(sortedAlarms.get(position)));
             AlarmManager alarmManager = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
             Intent intent = new Intent(this, AlarmReceiver.class);
-            PendingIntent pendingIntent = PendingIntent.getBroadcast(this, alarmId.hashCode(), intent, PendingIntent.FLAG_IMMUTABLE);
+            PendingIntent pendingIntent = PendingIntent.getBroadcast(
+                    this,
+                    alarmId.hashCode(),
+                    intent,
+                    PendingIntent.FLAG_IMMUTABLE
+            );
             alarmManager.cancel(pendingIntent);
         }
     }
 
     private void deleteAlarm(int position) {
         Map<String, ?> allPrefs = preferences.getAll();
-        List<String> alarmIds = new ArrayList<>();
+        List<AlarmData> sortedAlarms = new ArrayList<>();
+        List<String> sortedAlarmIds = new ArrayList<>();
 
         for (String key : allPrefs.keySet()) {
             if (key.endsWith("_name")) {
-                alarmIds.add(key.replace("_name", ""));
+                String alarmId = key.replace("_name", "");
+                String name = preferences.getString(key, "");
+                long time = preferences.getLong(alarmId + "_time", 0);
+                String timezone = preferences.getString(alarmId + "_timezone", "");
+                String recurrence = preferences.getString(alarmId + "_recurrence", "One-time");
+
+                sortedAlarms.add(new AlarmData(name, time, timezone, recurrence));
+                sortedAlarmIds.add(alarmId);
             }
         }
 
-        if (position < alarmIds.size()) {
-            String alarmId = alarmIds.get(position);
+        Collections.sort(sortedAlarms, (a1, a2) -> Long.compare(
+                convertToUTC(a1.time, a1.timezone),
+                convertToUTC(a2.time, a2.timezone)
+        ));
+
+        if (position < sortedAlarms.size()) {
+            String alarmId = sortedAlarmIds.get(sortedAlarms.indexOf(sortedAlarms.get(position)));
             SharedPreferences.Editor editor = preferences.edit();
             editor.remove(alarmId + "_name");
             editor.remove(alarmId + "_time");
@@ -150,13 +195,19 @@ public class MainActivity extends AppCompatActivity {
             if (key.endsWith("_name")) {
                 String alarmId = key.replace("_name", "");
                 String name = preferences.getString(key, "");
-                long time = preferences.getLong(alarmId + "_time", 0);
+                long utcTime = preferences.getLong(alarmId + "_time", 0);
                 String timezone = preferences.getString(alarmId + "_timezone", "");
                 String recurrence = preferences.getString(alarmId + "_recurrence", "One-time");
-                alarmList.add(new AlarmData(name, time, timezone, recurrence));
+
+                // Convert UTC time to alarm's timezone
+                TimeZone targetTimezone = TimeZone.getTimeZone(timezone);
+                long localTime = utcTime - targetTimezone.getOffset(utcTime);
+
+                alarmList.add(new AlarmData(name, localTime, timezone, recurrence));
             }
         }
 
+        // Sort alarms by their UTC time
         Collections.sort(alarmList, (a1, a2) -> Long.compare(
                 convertToUTC(a1.time, a1.timezone),
                 convertToUTC(a2.time, a2.timezone)
@@ -173,7 +224,6 @@ public class MainActivity extends AppCompatActivity {
         }
         adapter.notifyDataSetChanged();
     }
-
     private long convertToUTC(long timeInMillis, String timezone) {
         TimeZone tz = TimeZone.getTimeZone(timezone);
         return timeInMillis + tz.getOffset(timeInMillis);

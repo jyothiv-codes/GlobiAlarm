@@ -64,7 +64,7 @@ public class AlarmSetterActivity extends AppCompatActivity {
         }
 
         preferences = getSharedPreferences("AlarmPrefs", MODE_PRIVATE);
-        selectedDateTime = Calendar.getInstance();
+        selectedDateTime = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
 
         // Check if we're in edit mode
         isEditMode = getIntent().getBooleanExtra("EDIT_MODE", false);
@@ -193,7 +193,6 @@ public class AlarmSetterActivity extends AppCompatActivity {
         backButton.setOnClickListener(v -> onBackPressed());
     }
 
-
     private void loadExistingAlarmData() {
         String name = getIntent().getStringExtra("ALARM_NAME");
         long time = getIntent().getLongExtra("ALARM_TIME", 0);
@@ -202,18 +201,21 @@ public class AlarmSetterActivity extends AppCompatActivity {
 
         alarmName.setText(name);
 
-        Calendar cal = Calendar.getInstance();
-        cal.setTimeInMillis(time);
+        // Convert UTC time to the alarm's timezone
+        TimeZone targetTimezone = TimeZone.getTimeZone(timezone);
+        Calendar targetTime = Calendar.getInstance(targetTimezone);
+        targetTime.setTimeInMillis(time - targetTimezone.getOffset(time));
 
         dateButton.setText(String.format("%d/%d/%d",
-                cal.get(Calendar.DAY_OF_MONTH),
-                cal.get(Calendar.MONTH) + 1,
-                cal.get(Calendar.YEAR)));
+                targetTime.get(Calendar.DAY_OF_MONTH),
+                targetTime.get(Calendar.MONTH) + 1,
+                targetTime.get(Calendar.YEAR)));
 
         timeButton.setText(String.format("%02d:%02d",
-                cal.get(Calendar.HOUR_OF_DAY),
-                cal.get(Calendar.MINUTE)));
+                targetTime.get(Calendar.HOUR_OF_DAY),
+                targetTime.get(Calendar.MINUTE)));
 
+        selectedDateTime = targetTime;
         timezoneAutoComplete.setText(timezone);
 
         if (recurrence != null) {
@@ -227,7 +229,6 @@ public class AlarmSetterActivity extends AppCompatActivity {
             }
         }
     }
-
     private void showDatePicker() {
         DatePickerDialog datePickerDialog = new DatePickerDialog(
                 this,
@@ -258,6 +259,7 @@ public class AlarmSetterActivity extends AppCompatActivity {
     }
 
     @SuppressLint("ScheduleExactAlarm")
+
     private void saveAlarm() {
         String name = alarmName.getText().toString();
         selectedTimezone = timezoneAutoComplete.getText().toString();
@@ -288,12 +290,27 @@ public class AlarmSetterActivity extends AppCompatActivity {
             return;
         }
 
+        // Convert time to the selected timezone
+        TimeZone targetTimezone = TimeZone.getTimeZone(selectedTimezone);
+        Calendar targetTime = Calendar.getInstance(targetTimezone);
+
+        // Transfer the time components
+        targetTime.set(Calendar.YEAR, selectedDateTime.get(Calendar.YEAR));
+        targetTime.set(Calendar.MONTH, selectedDateTime.get(Calendar.MONTH));
+        targetTime.set(Calendar.DAY_OF_MONTH, selectedDateTime.get(Calendar.DAY_OF_MONTH));
+        targetTime.set(Calendar.HOUR_OF_DAY, selectedDateTime.get(Calendar.HOUR_OF_DAY));
+        targetTime.set(Calendar.MINUTE, selectedDateTime.get(Calendar.MINUTE));
+        targetTime.set(Calendar.SECOND, 0);
+        targetTime.set(Calendar.MILLISECOND, 0);
+
+        // Convert to UTC for storage
+        long utcTime = targetTime.getTimeInMillis() + targetTimezone.getOffset(targetTime.getTimeInMillis());
+
         SharedPreferences.Editor editor = preferences.edit();
         String alarmId;
 
         if (isEditMode) {
             alarmId = editAlarmId;
-            // Cancel existing alarm
             Intent intent = new Intent(this, AlarmReceiver.class);
             PendingIntent pendingIntent = PendingIntent.getBroadcast(
                     this,
@@ -308,7 +325,7 @@ public class AlarmSetterActivity extends AppCompatActivity {
 
         // Save alarm data
         editor.putString(alarmId + "_name", name);
-        editor.putLong(alarmId + "_time", selectedDateTime.getTimeInMillis());
+        editor.putLong(alarmId + "_time", utcTime);
         editor.putString(alarmId + "_timezone", selectedTimezone);
         editor.putString(alarmId + "_recurrence", recurrence);
 
@@ -322,8 +339,8 @@ public class AlarmSetterActivity extends AppCompatActivity {
 
         editor.apply();
 
-        // Schedule alarm
-        scheduleAlarm(alarmId, selectedDateTime.getTimeInMillis(), recurrence);
+        // Schedule alarm using UTC time
+        scheduleAlarm(alarmId, utcTime, recurrence);
 
         Toast.makeText(this,
                 isEditMode ? "Alarm updated" : "Alarm created",
@@ -332,7 +349,6 @@ public class AlarmSetterActivity extends AppCompatActivity {
 
         finish();
     }
-
     private void scheduleAlarm(String alarmId, long triggerTime, String recurrence) {
         AlarmManager alarmManager = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
         Intent intent = new Intent(this, AlarmReceiver.class);
