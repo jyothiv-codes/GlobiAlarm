@@ -10,11 +10,7 @@ import android.os.Bundle;
 import android.widget.ArrayAdapter;
 import android.widget.ListView;
 
-import androidx.activity.EdgeToEdge;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.graphics.Insets;
-import androidx.core.view.ViewCompat;
-import androidx.core.view.WindowInsetsCompat;
 
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 
@@ -60,6 +56,36 @@ public class MainActivity extends AppCompatActivity {
         adapter = new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, alarms);
         alarmList.setAdapter(adapter);
 
+        // Click listener for editing alarms
+        alarmList.setOnItemClickListener((parent, view, position, id) -> {
+            Map<String, ?> allPrefs = preferences.getAll();
+            List<String> alarmIds = new ArrayList<>();
+
+            for (String key : allPrefs.keySet()) {
+                if (key.endsWith("_name")) {
+                    alarmIds.add(key.replace("_name", ""));
+                }
+            }
+
+            if (position < alarmIds.size()) {
+                String alarmId = alarmIds.get(position);
+                String name = preferences.getString(alarmId + "_name", "");
+                long time = preferences.getLong(alarmId + "_time", 0);
+                String timezone = preferences.getString(alarmId + "_timezone", "");
+                String recurrence = preferences.getString(alarmId + "_recurrence", "One-time");
+
+                Intent editIntent = new Intent(this, AlarmSetterActivity.class);
+                editIntent.putExtra("EDIT_MODE", true);
+                editIntent.putExtra("ALARM_ID", alarmId);
+                editIntent.putExtra("ALARM_NAME", name);
+                editIntent.putExtra("ALARM_TIME", time);
+                editIntent.putExtra("ALARM_TIMEZONE", timezone);
+                editIntent.putExtra("ALARM_RECURRENCE", recurrence);
+                startActivity(editIntent);
+            }
+        });
+
+        // Long click listener for deleting alarms
         alarmList.setOnItemLongClickListener((parent, view, position, id) -> {
             new AlertDialog.Builder(this)
                     .setTitle("Delete Alarm")
@@ -73,6 +99,7 @@ public class MainActivity extends AppCompatActivity {
             return true;
         });
     }
+
     private void cancelScheduledAlarm(int position) {
         Map<String, ?> allPrefs = preferences.getAll();
         List<String> alarmIds = new ArrayList<>();
@@ -91,14 +118,7 @@ public class MainActivity extends AppCompatActivity {
             alarmManager.cancel(pendingIntent);
         }
     }
-    private void showDeleteDialog(int position) {
-        new AlertDialog.Builder(this)
-                .setTitle("Delete Alarm")
-                .setMessage("Are you sure you want to delete this alarm?")
-                .setPositiveButton("Delete", (dialog, which) -> deleteAlarm(position))
-                .setNegativeButton("Cancel", null)
-                .show();
-    }
+
     private void deleteAlarm(int position) {
         Map<String, ?> allPrefs = preferences.getAll();
         List<String> alarmIds = new ArrayList<>();
@@ -115,10 +135,12 @@ public class MainActivity extends AppCompatActivity {
             editor.remove(alarmId + "_name");
             editor.remove(alarmId + "_time");
             editor.remove(alarmId + "_timezone");
+            editor.remove(alarmId + "_recurrence");
             editor.apply();
             loadAlarms();
         }
     }
+
     private void loadAlarms() {
         alarms.clear();
         Map<String, ?> allPrefs = preferences.getAll();
@@ -130,7 +152,8 @@ public class MainActivity extends AppCompatActivity {
                 String name = preferences.getString(key, "");
                 long time = preferences.getLong(alarmId + "_time", 0);
                 String timezone = preferences.getString(alarmId + "_timezone", "");
-                alarmList.add(new AlarmData(name, time, timezone));
+                String recurrence = preferences.getString(alarmId + "_recurrence", "One-time");
+                alarmList.add(new AlarmData(name, time, timezone, recurrence));
             }
         }
 
@@ -142,11 +165,15 @@ public class MainActivity extends AppCompatActivity {
         for (AlarmData alarm : alarmList) {
             SimpleDateFormat sdf = new SimpleDateFormat("dd/MM/yyyy HH:mm");
             sdf.setTimeZone(TimeZone.getTimeZone(alarm.timezone));
-            alarms.add(String.format("%s - %s (%s)",
-                    alarm.name, sdf.format(new Date(alarm.time)), alarm.timezone));
+            alarms.add(String.format("%s - %s (%s) [%s]",
+                    alarm.name,
+                    sdf.format(new Date(alarm.time)),
+                    alarm.timezone,
+                    alarm.recurrence));
         }
         adapter.notifyDataSetChanged();
     }
+
     private long convertToUTC(long timeInMillis, String timezone) {
         TimeZone tz = TimeZone.getTimeZone(timezone);
         return timeInMillis + tz.getOffset(timeInMillis);
@@ -156,12 +183,13 @@ public class MainActivity extends AppCompatActivity {
         String name;
         long time;
         String timezone;
+        String recurrence;
 
-        AlarmData(String name, long time, String timezone) {
+        AlarmData(String name, long time, String timezone, String recurrence) {
             this.name = name;
             this.time = time;
             this.timezone = timezone;
+            this.recurrence = recurrence;
         }
     }
-
 }
